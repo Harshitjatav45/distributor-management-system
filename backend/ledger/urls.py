@@ -1,7 +1,7 @@
 from django.urls import path
-from ledger.views import LedgerListCreateAPIView, LedgerRetrieveUpdateDestroyAPIView
+from ledger.views import LedgerListAPIView, LedgerRetrieveAPIView
 
 urlpatterns = [
-    path('', LedgerListCreateAPIView.as_view(), name='ledger-list-create'),
-    path('<int:pk>/', LedgerRetrieveUpdateDestroyAPIView.as_view(), name='ledger-detail'),
+    path('', LedgerListAPIView.as_view(), name='ledger-list'),
+    path('<int:pk>/', LedgerRetrieveAPIView.as_view(), name='ledger-detail'),
 ]

@@ -10,11 +10,13 @@ from payment.services import (
     post_payment_out_ledger_entry,
     cancel_payment,
 )
+from accounts.permissions import IsAdminOrManager
 
 
 class PaymentListCreateAPIView(generics.ListCreateAPIView):
     queryset = Payment.objects.all().order_by("-payment_date", "-id")
     serializer_class = PaymentSerializer
+    permission_classes = [IsAdminOrManager]
 
     def perform_create(self, serializer):
         with transaction.atomic():
@@ -36,6 +38,7 @@ class PaymentListCreateAPIView(generics.ListCreateAPIView):
 class PaymentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Payment.objects.all().order_by("-payment_date", "-id")
     serializer_class = PaymentSerializer
+    permission_classes = [IsAdminOrManager]
 
     def perform_update(self, serializer):
         with transaction.atomic():

@@ -1,14 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.views import TokenRefreshView
 from accounts.serializers import LoginSerializer, JWTLoginSerializer, UserSerializer
 
 
 class LoginAPIView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -20,6 +23,8 @@ class LoginAPIView(APIView):
 
 
 class JWTLoginAPIView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = JWTLoginSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -32,6 +37,15 @@ class JWTLoginAPIView(APIView):
             "refresh": str(refresh),
             "user": UserSerializer(user).data,
         }, status=status.HTTP_200_OK)
+
+
+class PublicTokenRefreshView(TokenRefreshView):
+    """simplejwt's TokenRefreshView with no permission_classes override of
+    its own - it would otherwise inherit the project's global
+    IsAuthenticated default, which breaks the entire point of a refresh
+    token (using it specifically once the access token has expired).
+    """
+    permission_classes = [AllowAny]
 
 
 class LogoutAPIView(APIView):

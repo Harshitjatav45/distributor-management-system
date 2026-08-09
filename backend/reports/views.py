@@ -9,9 +9,12 @@ from stock.models import Stock
 from customer.models import Customer
 from supplier.models import Supplier
 from ledger.models import Ledger
+from accounts.permissions import IsAdminOrManager
 
 
 class PurchaseReportAPIView(APIView):
+    permission_classes = [IsAdminOrManager]
+
     def get(self, request):
         data = PurchaseItem.objects.select_related(
             'purchase', 'purchase__supplier', 'material'
@@ -35,6 +38,8 @@ class PurchaseReportAPIView(APIView):
 
 
 class SalesReportAPIView(APIView):
+    permission_classes = [IsAdminOrManager]
+
     def get(self, request):
         data = SalesItem.objects.select_related(
             'sales', 'sales__customer', 'material'
@@ -76,6 +81,8 @@ class StockReportAPIView(APIView):
 
 
 class CustomerReportAPIView(APIView):
+    permission_classes = [IsAdminOrManager]
+
     def get(self, request):
         sales_subquery = Sales.objects.filter(
             customer=OuterRef('pk')
@@ -125,6 +132,8 @@ class CustomerReportAPIView(APIView):
 
 
 class SupplierReportAPIView(APIView):
+    permission_classes = [IsAdminOrManager]
+
     def get(self, request):
         purchase_subquery = Purchase.objects.filter(
             supplier=OuterRef('pk')
@@ -174,6 +183,8 @@ class SupplierReportAPIView(APIView):
 
 
 class LedgerReportAPIView(APIView):
+    permission_classes = [IsAdminOrManager]
+
     def get(self, request):
         data = Ledger.objects.select_related('customer', 'supplier').annotate(
             party_name=Coalesce('customer__customer_name', 'supplier__supplier_name')

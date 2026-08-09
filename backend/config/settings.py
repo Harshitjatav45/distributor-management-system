@@ -160,17 +160,18 @@ STATIC_URL = 'static/'
 
 
 # Django REST Framework
-# JWTAuthentication is wired in globally so any view CAN require it, but the
-# default permission stays AllowAny (matching this project's current,
-# pre-existing behavior) so no existing endpoint becomes newly restricted in
-# this phase - only the new /api/auth/ views opt into IsAuthenticated
-# themselves.
+# Phase 3: the default flips from AllowAny to IsAuthenticated - every
+# business module now requires a valid JWT at minimum. Views needing a more
+# specific rule (Ledger, Payment, Stock writes, master-data delete,
+# financial reports, Purchase/Sales confirm+cancel) declare their own
+# permission_classes on top of this. Login/refresh explicitly opt back out
+# to AllowAny, since they must remain reachable without a token.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
