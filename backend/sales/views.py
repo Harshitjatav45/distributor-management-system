@@ -1,6 +1,9 @@
+from django.db import transaction
 from rest_framework import generics
+from rest_framework.exceptions import ValidationError
 from sales.models import Sales, SalesItem
 from sales.serializers import SalesSerializer, SalesItemSerializer
+from sales.services import confirm_sales, cancel_sales
 
 
 class SalesListCreateAPIView(generics.ListCreateAPIView):
@@ -12,6 +15,20 @@ class SalesRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Sales.objects.all().order_by("-sales_date", "-id")
     serializer_class = SalesSerializer
 
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            locked_sales = Sales.objects.select_for_update().get(pk=serializer.instance.pk)
+            old_status = locked_sales.status
+            new_status = serializer.validated_data.get('status', old_status)
+
+            serializer.save()
+
+            if old_status != new_status:
+                if old_status == 'DRAFT' and new_status == 'CONFIRMED':
+                    confirm_sales(serializer.instance)
+                elif old_status == 'CONFIRMED' and new_status == 'CANCELLED':
+                    cancel_sales(serializer.instance)
+
 
 class SalesItemListCreateAPIView(generics.ListCreateAPIView):
     queryset = SalesItem.objects.all().order_by("-id")
@@ -21,3 +38,10 @@ class SalesItemListCreateAPIView(generics.ListCreateAPIView):
 class SalesItemRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = SalesItem.objects.all().order_by("-id")
     serializer_class = SalesItemSerializer
+
+    def perform_destroy(self, instance):
+        if instance.sales.status != 'DRAFT':
+            raise ValidationError(
+                "Cannot delete items from a sales order that is not in DRAFT status."
+            )
+        instance.delete()

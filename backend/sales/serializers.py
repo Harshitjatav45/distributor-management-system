@@ -38,6 +38,22 @@ class SalesSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Grand total cannot be negative.")
         return value
 
+    def validate(self, attrs):
+        if self.instance:
+            old_status = self.instance.status
+            new_status = attrs.get('status', old_status)
+
+            if old_status == 'CANCELLED' and new_status != 'CANCELLED':
+                raise serializers.ValidationError(
+                    {'status': 'A cancelled sales order cannot change status.'}
+                )
+            if old_status == 'CONFIRMED' and new_status == 'DRAFT':
+                raise serializers.ValidationError(
+                    {'status': 'A confirmed sales order cannot be reverted to draft.'}
+                )
+
+        return attrs
+
 
 class SalesItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -63,3 +79,11 @@ class SalesItemSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError("GST percentage cannot be negative.")
         return value
+
+    def validate(self, attrs):
+        sales = attrs.get('sales', getattr(self.instance, 'sales', None))
+        if sales is not None and sales.status != 'DRAFT':
+            raise serializers.ValidationError(
+                "Cannot create or modify items on a sales order that is not in DRAFT status."
+            )
+        return attrs
