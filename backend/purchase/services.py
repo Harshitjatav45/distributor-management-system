@@ -1,6 +1,8 @@
 from decimal import Decimal
 from rest_framework.exceptions import ValidationError
 from stock.models import Stock
+from ledger.models import Ledger
+from supplier.models import Supplier
 
 
 def _effective_quantity(item):
@@ -64,3 +66,95 @@ def reverse_purchase_confirmation(purchase):
         stock.current_stock = stock.current_stock - qty
         stock.available_stock = stock.available_stock - qty
         stock.save()
+
+
+def _get_previous_supplier_balance(supplier):
+    """Caller must already hold a select_for_update() lock on `supplier`."""
+    last_entry = Ledger.objects.filter(supplier=supplier).order_by('-id').first()
+    if last_entry is not None:
+        return last_entry.balance
+    if supplier.opening_balance_type == 'CREDIT':
+        return supplier.opening_balance
+    return -supplier.opening_balance
+
+
+def post_purchase_confirmation_ledger_entry(purchase):
+    """Create the CREDIT Ledger entry for a Purchase moving DRAFT -> CONFIRMED.
+
+    Locks the Supplier row before reading/computing the running balance so that
+    two different Purchases for the same Supplier, confirmed concurrently,
+    serialize through this lock instead of racing on a stale "previous balance".
+    """
+    supplier = Supplier.objects.select_for_update().get(pk=purchase.supplier_id)
+
+    previous_balance = _get_previous_supplier_balance(supplier)
+    new_balance = previous_balance + purchase.grand_total
+
+    Ledger.objects.create(
+        transaction_date=purchase.purchase_date,
+        reference_type='PURCHASE',
+        reference_id=purchase.id,
+        supplier=supplier,
+        entry_type='CREDIT',
+        amount=purchase.grand_total,
+        balance=new_balance,
+        remarks=f"Purchase {purchase.purchase_number} confirmed.",
+    )
+
+
+def post_purchase_cancellation_ledger_entry(purchase):
+    """Create the offsetting DEBIT Ledger entry for a Purchase moving CONFIRMED -> CANCELLED.
+
+    Never deletes/mutates the original CREDIT entry - posts a second, opposite entry
+    against the same reference_type/reference_id instead. Locks the Supplier row for
+    the same reason as the confirmation path.
+    """
+    supplier = Supplier.objects.select_for_update().get(pk=purchase.supplier_id)
+
+    already_reversed = Ledger.objects.filter(
+        supplier=supplier,
+        reference_type='PURCHASE',
+        reference_id=purchase.id,
+        entry_type='DEBIT',
+    ).exists()
+    if already_reversed:
+        return
+
+    previous_balance = _get_previous_supplier_balance(supplier)
+    new_balance = previous_balance - purchase.grand_total
+
+    if new_balance < 0:
+        raise ValidationError({
+            'status': (
+                f"Cannot cancel: reversing purchase '{purchase.purchase_number}' would make "
+                f"supplier '{supplier.supplier_name}' payable balance negative "
+                f"(current balance: {previous_balance}, reversal amount: {purchase.grand_total})."
+            )
+        })
+
+    Ledger.objects.create(
+        transaction_date=purchase.purchase_date,
+        reference_type='PURCHASE',
+        reference_id=purchase.id,
+        supplier=supplier,
+        entry_type='DEBIT',
+        amount=purchase.grand_total,
+        balance=new_balance,
+        remarks=f"Reversal: Purchase {purchase.purchase_number} cancelled.",
+    )
+
+
+def confirm_purchase(purchase):
+    """Orchestrates DRAFT -> CONFIRMED: validate, then Stock, then Ledger, in that order."""
+    if purchase.grand_total is None or purchase.grand_total <= 0:
+        raise ValidationError({
+            'grand_total': 'Purchase grand_total must be greater than zero to confirm.'
+        })
+    apply_purchase_confirmation(purchase)
+    post_purchase_confirmation_ledger_entry(purchase)
+
+
+def cancel_purchase(purchase):
+    """Orchestrates CONFIRMED -> CANCELLED: reverse Stock, then reverse Ledger."""
+    reverse_purchase_confirmation(purchase)
+    post_purchase_cancellation_ledger_entry(purchase)

@@ -3,7 +3,7 @@ from rest_framework import generics
 from rest_framework.exceptions import ValidationError
 from purchase.models import Purchase, PurchaseItem
 from purchase.serializers import PurchaseSerializer, PurchaseItemSerializer
-from purchase.services import apply_purchase_confirmation, reverse_purchase_confirmation
+from purchase.services import confirm_purchase, cancel_purchase
 
 
 class PurchaseListCreateAPIView(generics.ListCreateAPIView):
@@ -25,9 +25,9 @@ class PurchaseRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
 
             if old_status != new_status:
                 if old_status == 'DRAFT' and new_status == 'CONFIRMED':
-                    apply_purchase_confirmation(serializer.instance)
+                    confirm_purchase(serializer.instance)
                 elif old_status == 'CONFIRMED' and new_status == 'CANCELLED':
-                    reverse_purchase_confirmation(serializer.instance)
+                    cancel_purchase(serializer.instance)
 
 
 class PurchaseItemListCreateAPIView(generics.ListCreateAPIView):
