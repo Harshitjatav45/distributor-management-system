@@ -171,6 +171,28 @@ def confirm_sales(sales):
 
 
 def cancel_sales(sales):
-    """Orchestrates CONFIRMED -> CANCELLED: reverse Stock, then reverse Ledger."""
+    """Orchestrates CONFIRMED -> CANCELLED: guard against an active Dispatch,
+    then reverse Stock, then reverse Ledger.
+
+    Guard rationale: once a Dispatch exists, the goods may have already
+    physically left the warehouse (or been delivered). Restoring Stock in
+    that case would create a false inventory record. This check runs here,
+    inside the same locked Sales transaction perform_update() already
+    establishes, so it's race-safe against a concurrent Dispatch creation
+    without needing a second, separate lock - Dispatch creation itself locks
+    this same Sales row first (see dispatch/services.py), so the two
+    operations always serialize against each other through that shared lock.
+    """
+    from dispatch.models import Dispatch
+
+    has_blocking_dispatch = Dispatch.objects.filter(sales=sales).exclude(status='CANCELLED').exists()
+    if has_blocking_dispatch:
+        raise ValidationError({
+            'status': (
+                f"Cannot cancel sales '{sales.sales_number}': an active or completed Dispatch "
+                f"exists for this order. Cancel the Dispatch first if it has not been delivered."
+            )
+        })
+
     restore_sales_stock(sales)
     post_sales_cancellation_ledger_entry(sales)

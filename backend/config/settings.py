@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'ledger',
     'reports',
     'payment',
+    'dispatch',
 ]
 
 MIDDLEWARE = [
