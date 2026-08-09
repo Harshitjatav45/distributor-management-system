@@ -19,6 +19,22 @@ class PurchaseSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Purchase number must be unique.")
         return value
 
+    def validate(self, attrs):
+        if self.instance:
+            old_status = self.instance.status
+            new_status = attrs.get('status', old_status)
+
+            if old_status == 'CANCELLED' and new_status != 'CANCELLED':
+                raise serializers.ValidationError(
+                    {'status': 'A cancelled purchase cannot change status.'}
+                )
+            if old_status == 'CONFIRMED' and new_status == 'DRAFT':
+                raise serializers.ValidationError(
+                    {'status': 'A confirmed purchase cannot be reverted to draft.'}
+                )
+
+        return attrs
+
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -66,5 +82,11 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 
         if received_quantity is not None and quantity is not None and received_quantity > quantity:
             raise serializers.ValidationError("Received quantity cannot be greater than quantity.")
+
+        purchase = attrs.get('purchase', getattr(self.instance, 'purchase', None))
+        if purchase is not None and purchase.status != 'DRAFT':
+            raise serializers.ValidationError(
+                "Cannot create or modify items on a purchase that is not in DRAFT status."
+            )
 
         return attrs
