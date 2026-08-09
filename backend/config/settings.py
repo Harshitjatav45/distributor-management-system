@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'sales',
     'ledger',
     'reports',
+    'payment',
 ]
 
 MIDDLEWARE = [
