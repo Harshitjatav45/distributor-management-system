@@ -1,7 +1,10 @@
+import logging
 from rest_framework.exceptions import ValidationError
 from ledger.models import Ledger
 from customer.models import Customer
 from supplier.models import Supplier
+
+logger = logging.getLogger(__name__)
 
 
 def get_previous_customer_balance(customer):
@@ -154,3 +157,4 @@ def cancel_payment(payment):
         cancel_payment_in(payment)
     else:
         cancel_payment_out(payment)
+    logger.info("Payment cancelled: payment_number=%s payment_type=%s", payment.payment_number, payment.payment_type)

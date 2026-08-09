@@ -1,3 +1,4 @@
+import logging
 from django.db import transaction
 from rest_framework import generics
 from rest_framework.exceptions import ValidationError
@@ -11,6 +12,8 @@ from payment.services import (
     cancel_payment,
 )
 from accounts.permissions import IsAdminOrManager
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentListCreateAPIView(generics.ListCreateAPIView):
@@ -33,6 +36,11 @@ class PaymentListCreateAPIView(generics.ListCreateAPIView):
                 supplier, new_balance = lock_and_validate_payment_out(supplier_id, amount)
                 payment = serializer.save()
                 post_payment_out_ledger_entry(payment, supplier, new_balance)
+
+            logger.info(
+                "Payment created: payment_number=%s payment_type=%s",
+                payment.payment_number, payment.payment_type,
+            )
 
 
 class PaymentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):

@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.exceptions import ValidationError
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -10,7 +11,14 @@ from accounts.serializers import LoginSerializer, JWTLoginSerializer, UserSerial
 
 
 class LoginAPIView(APIView):
+    """Legacy, message-only login endpoint (unchanged response shape from
+    Phase 2). Given the same brute-force scope as the JWT login endpoint
+    below (throttle_scope='login') so an attacker can't dodge the rate
+    limit by alternating between the two - they share one counter.
+    """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -24,6 +32,8 @@ class LoginAPIView(APIView):
 
 class JWTLoginAPIView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = JWTLoginSerializer(data=request.data, context={"request": request})
@@ -46,6 +56,8 @@ class PublicTokenRefreshView(TokenRefreshView):
     token (using it specifically once the access token has expired).
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'refresh'
 
 
 class LogoutAPIView(APIView):

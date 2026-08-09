@@ -1,9 +1,12 @@
+import logging
 from decimal import Decimal
 from django.db.models import Sum
 from rest_framework.exceptions import ValidationError
 from stock.models import Stock
 from ledger.models import Ledger
 from customer.models import Customer
+
+logger = logging.getLogger(__name__)
 
 
 def _materials_with_quantity(sales):
@@ -168,6 +171,7 @@ def confirm_sales(sales):
         })
     deduct_sales_stock(sales)
     post_sales_confirmation_ledger_entry(sales)
+    logger.info("Sales confirmed: sales_number=%s customer_id=%s", sales.sales_number, sales.customer_id)
 
 
 def cancel_sales(sales):
@@ -196,3 +200,4 @@ def cancel_sales(sales):
 
     restore_sales_stock(sales)
     post_sales_cancellation_ledger_entry(sales)
+    logger.info("Sales cancelled: sales_number=%s customer_id=%s", sales.sales_number, sales.customer_id)

@@ -1,8 +1,11 @@
+import logging
 from decimal import Decimal
 from rest_framework.exceptions import ValidationError
 from stock.models import Stock
 from ledger.models import Ledger
 from supplier.models import Supplier
+
+logger = logging.getLogger(__name__)
 
 
 def _effective_quantity(item):
@@ -152,9 +155,11 @@ def confirm_purchase(purchase):
         })
     apply_purchase_confirmation(purchase)
     post_purchase_confirmation_ledger_entry(purchase)
+    logger.info("Purchase confirmed: purchase_number=%s supplier_id=%s", purchase.purchase_number, purchase.supplier_id)
 
 
 def cancel_purchase(purchase):
     """Orchestrates CONFIRMED -> CANCELLED: reverse Stock, then reverse Ledger."""
     reverse_purchase_confirmation(purchase)
     post_purchase_cancellation_ledger_entry(purchase)
+    logger.info("Purchase cancelled: purchase_number=%s supplier_id=%s", purchase.purchase_number, purchase.supplier_id)

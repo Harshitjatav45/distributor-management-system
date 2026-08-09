@@ -48,6 +48,13 @@ DEBUG = os.environ.get('DEBUG', 'False').strip().lower() == 'true'
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
 
+# CORS - explicit allow-list only, sourced from the environment so dev/prod
+# never need a code change, just a different .env value. If the variable is
+# unset or empty, CORS_ALLOWED_ORIGINS is an empty list, meaning NO origin
+# is allowed - deliberately never falling back to allow-all.
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
+CORS_ALLOW_ALL_ORIGINS = False
+
 
 # Application definition
 
@@ -59,6 +66,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'accounts',
@@ -78,6 +86,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -166,6 +175,14 @@ STATIC_URL = 'static/'
 # financial reports, Purchase/Sales confirm+cancel) declare their own
 # permission_classes on top of this. Login/refresh explicitly opt back out
 # to AllowAny, since they must remain reachable without a token.
+#
+# Phase 4A: throttling. Login and token-refresh explicitly opt into their
+# own ScopedRateThrottle (see accounts/views.py) rather than the general
+# Anon/User rates below, since brute-force protection on those two specific
+# endpoints needs its own tight, dedicated limit. Every other view keeps
+# using the Anon/User defaults. DRF throttling never touches Django Admin -
+# Admin is plain Django, not a DRF APIView, so it never runs through this
+# machinery at all.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -173,6 +190,17 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/hour',
+        'user': '300/hour',
+        'login': '5/minute',
+        'refresh': '15/minute',
+    },
+    'EXCEPTION_HANDLER': 'accounts.exception_handlers.logging_exception_handler',
 }
 
 # djangorestframework-simplejwt
@@ -189,4 +217,51 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
+}
+
+# Logging. Console handler deliberately chosen over a file handler - most
+# modern deployment platforms (containers, systemd, PaaS) capture
+# stdout/stderr directly, so this works in both dev and production without
+# needing a separate on-disk log path decided in this phase. Root logger
+# catches every module's logging.getLogger(__name__) calls (accounts,
+# purchase.services, sales.services, payment.*) without needing each one
+# listed individually - none of them disable propagation.
+#
+# Never log: passwords, JWT access/refresh tokens, SECRET_KEY, the DB
+# password, password hashes, or unnecessary personal data. Every logger.*
+# call added in this phase (accounts/signals.py, accounts/exception_
+# handlers.py, purchase/services.py, sales/services.py, payment/views.py,
+# payment/services.py) only ever includes usernames, ids, document numbers,
+# and status values - never a credential or secret.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
 }
