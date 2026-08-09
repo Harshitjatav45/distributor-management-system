@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -59,6 +60,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'accounts',
     'company',
     'material',
@@ -155,3 +157,35 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+# Django REST Framework
+# JWTAuthentication is wired in globally so any view CAN require it, but the
+# default permission stays AllowAny (matching this project's current,
+# pre-existing behavior) so no existing endpoint becomes newly restricted in
+# this phase - only the new /api/auth/ views opt into IsAuthenticated
+# themselves.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}
+
+# djangorestframework-simplejwt
+# Lifetimes chosen for an internally-operated business ERP, not a
+# high-security consumer app: short access-token life limits the exposure
+# window of a token that cannot be revoked before it expires; a week-long
+# refresh token matches how staff actually use this system (same device,
+# repeated logins across a work week) without leaving a stolen refresh
+# token dangerous indefinitely. Rotation + blacklist-after-rotation means
+# every refresh token can only ever be used once.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+}
