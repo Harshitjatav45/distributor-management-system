@@ -55,6 +55,31 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOW_ALL_ORIGINS = False
 
+# Phase 4B (Bucket A): HTTPS/production security settings. Every one of
+# these defaults to safely OFF (False/0) - they only ever turn on if a
+# .env explicitly sets them, exactly mirroring how DEBUG itself already
+# works. Local development's .env sets none of these, so they stay off
+# here; nothing below is enabled in the current local environment.
+#
+# HSTS specifically must never be turned on until HTTPS is confirmed
+# reliably working in that exact environment - a browser that receives
+# it will refuse plain-HTTP connections to that host for the stated
+# duration, which is not something you can quickly undo. Not enabling it
+# locally is deliberate, not an oversight.
+SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').strip().lower() == 'true'
+SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'False').strip().lower() == 'true'
+CSRF_COOKIE_SECURE = os.environ.get('CSRF_COOKIE_SECURE', 'False').strip().lower() == 'true'
+SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False').strip().lower() == 'true'
+SECURE_HSTS_PRELOAD = os.environ.get('SECURE_HSTS_PRELOAD', 'False').strip().lower() == 'true'
+
+# SECURE_CONTENT_TYPE_NOSNIFF, X_FRAME_OPTIONS, and SECURE_REFERRER_POLICY
+# are deliberately NOT set here - Django's own built-in defaults (True,
+# 'DENY', and 'same-origin' respectively) are already correct for both
+# environments and are already active via the existing MIDDLEWARE
+# (XFrameOptionsMiddleware, SecurityMiddleware). Overriding them would add
+# nothing.
+
 
 # Application definition
 
@@ -219,7 +244,7 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,
 }
 
-# Logging. Console handler deliberately chosen over a file handler - most
+# Logging. Console handler stays the primary, always-on handler - most
 # modern deployment platforms (containers, systemd, PaaS) capture
 # stdout/stderr directly, so this works in both dev and production without
 # needing a separate on-disk log path decided in this phase. Root logger
@@ -227,12 +252,41 @@ SIMPLE_JWT = {
 # purchase.services, sales.services, payment.*) without needing each one
 # listed individually - none of them disable propagation.
 #
+# Phase 4B (Bucket A): optional, environment-controlled file rotation,
+# ADDED alongside the console handler, never replacing it. Disabled by
+# default (LOG_TO_FILE unset -> False) so local development's behavior is
+# completely unchanged from Phase 4A. Only relevant for a deployment target
+# that writes to actual log files rather than having its platform capture
+# stdout - not needed and not active in this project's current setup.
+#
 # Never log: passwords, JWT access/refresh tokens, SECRET_KEY, the DB
 # password, password hashes, or unnecessary personal data. Every logger.*
 # call added in this phase (accounts/signals.py, accounts/exception_
 # handlers.py, purchase/services.py, sales/services.py, payment/views.py,
 # payment/services.py) only ever includes usernames, ids, document numbers,
 # and status values - never a credential or secret.
+LOG_TO_FILE = os.environ.get('LOG_TO_FILE', 'False').strip().lower() == 'true'
+LOG_FILE_PATH = os.environ.get('LOG_FILE_PATH', str(BASE_DIR / 'logs' / 'app.log'))
+
+_LOGGING_HANDLERS = {
+    'console': {
+        'class': 'logging.StreamHandler',
+        'formatter': 'verbose',
+    },
+}
+_LOGGING_ROOT_HANDLERS = ['console']
+
+if LOG_TO_FILE:
+    Path(LOG_FILE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    _LOGGING_HANDLERS['file'] = {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': LOG_FILE_PATH,
+        'maxBytes': 10 * 1024 * 1024,  # 10 MB per file
+        'backupCount': 10,
+        'formatter': 'verbose',
+    }
+    _LOGGING_ROOT_HANDLERS.append('file')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -242,24 +296,19 @@ LOGGING = {
             'style': '{',
         },
     },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
+    'handlers': _LOGGING_HANDLERS,
     'root': {
-        'handlers': ['console'],
+        'handlers': _LOGGING_ROOT_HANDLERS,
         'level': 'INFO',
     },
     'loggers': {
         'django.request': {
-            'handlers': ['console'],
+            'handlers': _LOGGING_ROOT_HANDLERS,
             'level': 'ERROR',
             'propagate': False,
         },
         'django.security': {
-            'handlers': ['console'],
+            'handlers': _LOGGING_ROOT_HANDLERS,
             'level': 'WARNING',
             'propagate': False,
         },
