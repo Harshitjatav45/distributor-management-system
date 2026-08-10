@@ -13,8 +13,14 @@ def _effective_quantity(item):
 
 
 def apply_purchase_confirmation(purchase):
-    """Increase stock for every item on a Purchase moving DRAFT -> CONFIRMED."""
-    for item in purchase.items.select_related('material').all():
+    """Increase stock for every item on a Purchase moving DRAFT -> CONFIRMED.
+
+    Items are processed in ascending material_id order (mirroring Sales'
+    _materials_with_quantity) so that two different Purchases sharing
+    overlapping materials, confirmed concurrently, always acquire their
+    Stock row locks in the same order - preventing a lock-ordering deadlock.
+    """
+    for item in purchase.items.select_related('material').order_by('material_id').all():
         qty = _effective_quantity(item)
         stock, _ = Stock.objects.select_for_update().get_or_create(material=item.material)
 
@@ -42,7 +48,7 @@ def reverse_purchase_confirmation(purchase):
     (a future StockMovement ledger), which this implementation does not add.
     Only current_stock / available_stock are reversed.
     """
-    items = list(purchase.items.select_related('material').all())
+    items = list(purchase.items.select_related('material').order_by('material_id').all())
 
     # First pass: validate the reversal won't drive any material negative.
     for item in items:

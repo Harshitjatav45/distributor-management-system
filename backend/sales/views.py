@@ -5,6 +5,7 @@ from sales.models import Sales, SalesItem
 from sales.serializers import SalesSerializer, SalesItemSerializer
 from sales.services import confirm_sales, cancel_sales
 from accounts.permissions import DenyDeleteUnlessAdmin, is_admin_or_manager
+from audit.services import write_audit
 
 
 class SalesListCreateAPIView(generics.ListCreateAPIView):
@@ -41,8 +42,20 @@ class SalesRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
             if old_status != new_status:
                 if old_status == 'DRAFT' and new_status == 'CONFIRMED':
                     confirm_sales(serializer.instance)
+                    write_audit(
+                        actor=self.request.user, action='CONFIRM', model_name='Sales',
+                        object_id=serializer.instance.id, object_repr=serializer.instance.sales_number,
+                        before={'status': old_status},
+                        after={'status': new_status, 'grand_total': str(serializer.instance.grand_total)},
+                    )
                 elif old_status == 'CONFIRMED' and new_status == 'CANCELLED':
                     cancel_sales(serializer.instance)
+                    write_audit(
+                        actor=self.request.user, action='CANCEL', model_name='Sales',
+                        object_id=serializer.instance.id, object_repr=serializer.instance.sales_number,
+                        before={'status': old_status},
+                        after={'status': new_status, 'grand_total': str(serializer.instance.grand_total)},
+                    )
 
 
 class SalesItemListCreateAPIView(generics.ListCreateAPIView):

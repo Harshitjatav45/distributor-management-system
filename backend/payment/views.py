@@ -12,6 +12,7 @@ from payment.services import (
     cancel_payment,
 )
 from accounts.permissions import IsAdminOrManager
+from audit.services import write_audit
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,12 @@ class PaymentListCreateAPIView(generics.ListCreateAPIView):
                 payment = serializer.save()
                 post_payment_out_ledger_entry(payment, supplier, new_balance)
 
+            write_audit(
+                actor=self.request.user, action='CREATE', model_name='Payment',
+                object_id=payment.id, object_repr=payment.payment_number,
+                after={'payment_type': payment.payment_type, 'amount': str(payment.amount), 'status': payment.status},
+            )
+
             logger.info(
                 "Payment created: payment_number=%s payment_type=%s",
                 payment.payment_number, payment.payment_type,
@@ -58,6 +65,11 @@ class PaymentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView)
 
             if old_status != new_status and old_status == 'CONFIRMED' and new_status == 'CANCELLED':
                 cancel_payment(serializer.instance)
+                write_audit(
+                    actor=self.request.user, action='CANCEL', model_name='Payment',
+                    object_id=serializer.instance.id, object_repr=serializer.instance.payment_number,
+                    before={'status': old_status}, after={'status': new_status},
+                )
 
     def perform_destroy(self, instance):
         raise ValidationError(

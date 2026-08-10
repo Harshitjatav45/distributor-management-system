@@ -5,9 +5,28 @@ from accounts.models import User
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """Used for login/me responses. Deliberately exposes a computed `role`
+    label only (Admin/Manager/Staff) - never the raw is_staff, is_superuser,
+    or groups fields, so Django Admin access and group membership internals
+    are never leaked even though the frontend needs to know the role for
+    navigation. Frontend role-based hiding is UX only; every endpoint still
+    enforces its own permission_classes regardless of what this reports.
+    """
+    role = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'email']
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'role']
+
+    def get_role(self, obj):
+        if obj.is_superuser:
+            return 'Admin'
+        names = set(obj.groups.values_list('name', flat=True))
+        if 'Manager' in names:
+            return 'Manager'
+        if 'Staff' in names:
+            return 'Staff'
+        return None
 
 
 class LoginSerializer(serializers.Serializer):

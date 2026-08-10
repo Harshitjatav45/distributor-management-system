@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from dispatch.models import Dispatch
 from dispatch.serializers import DispatchSerializer
 from dispatch.services import create_dispatch, apply_dispatch_status_change
+from audit.services import write_audit
 
 
 class DispatchListCreateAPIView(generics.ListCreateAPIView):
@@ -14,7 +15,12 @@ class DispatchListCreateAPIView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         with transaction.atomic():
-            create_dispatch(serializer)
+            dispatch = create_dispatch(serializer)
+            write_audit(
+                actor=self.request.user, action='CREATE', model_name='Dispatch',
+                object_id=dispatch.id, object_repr=dispatch.dispatch_number,
+                after={'status': dispatch.status, 'sales_id': dispatch.sales_id},
+            )
 
 
 class DispatchRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -31,6 +37,13 @@ class DispatchRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
 
             if old_status != new_status:
                 apply_dispatch_status_change(serializer.instance, new_status)
+                write_audit(
+                    actor=self.request.user,
+                    action='CANCEL' if new_status == 'CANCELLED' else 'STATUS_CHANGE',
+                    model_name='Dispatch', object_id=serializer.instance.id,
+                    object_repr=serializer.instance.dispatch_number,
+                    before={'status': old_status}, after={'status': new_status},
+                )
 
     def perform_destroy(self, instance):
         raise ValidationError(

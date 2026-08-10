@@ -62,6 +62,15 @@ class DenyDeleteUnlessAdmin(BasePermission):
         return True
 
 
+class IsAdminOnly(BasePermission):
+    """Admin (superuser) only. Used for the user-management API and the
+    AuditLog read endpoint - the approved RBAC design never grants Manager
+    or Staff any user-management or audit-log capability.
+    """
+    def has_permission(self, request, view):
+        return is_admin(request.user)
+
+
 class StockPermission(BasePermission):
     """Read for any authenticated role; create/update for Admin/Manager
     only; delete for Admin only. Staff is read-only on Stock.
