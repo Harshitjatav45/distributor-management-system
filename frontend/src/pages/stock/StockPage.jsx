@@ -1,53 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import client from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner, { extractErrorMessage } from '../../components/ErrorBanner';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
 
 export default function StockPage() {
   const { user } = useAuth();
   const canWrite = user?.role === 'Admin' || user?.role === 'Manager';
 
-  const [stockRows, setStockRows] = useState([]);
   const [materials, setMaterials] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const { rows, count, loading, error, page, setPage, totalPages, reload } = usePaginatedList('/stock/', { search });
 
   const [editing, setEditing] = useState(null);
   const [formState, setFormState] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [stockResp, materialResp] = await Promise.all([client.get('/stock/'), client.get('/material/')]);
-      setStockRows(stockResp.data);
-      const map = {};
-      for (const m of materialResp.data) map[m.id] = m;
-      setMaterials(map);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    load();
+    // Materials are needed to display name/code/minimum_stock_level, since
+    // Stock's serializer only returns the material FK id. Fetched once at
+    // a large page size (materials are a bounded master-data set, unlike
+    // the transactional lists this project paginates for real growth).
+    client.get('/material/', { params: { page_size: 200 } })
+      .then((resp) => {
+        const map = {};
+        for (const m of resp.data.results) map[m.id] = m;
+        setMaterials(map);
+      })
+      .catch(() => setMaterials({}));
   }, []);
-
-  const filteredRows = useMemo(() => {
-    if (!search.trim()) return stockRows;
-    const q = search.trim().toLowerCase();
-    return stockRows.filter((row) => {
-      const m = materials[row.material];
-      return m && (m.material_name.toLowerCase().includes(q) || m.material_code.toLowerCase().includes(q));
-    });
-  }, [stockRows, materials, search]);
 
   const openEdit = (row) => {
     setEditing(row);
@@ -66,7 +58,7 @@ export default function StockPage() {
     try {
       await client.patch(`/stock/${editing.id}/`, formState);
       setEditing(null);
-      await load();
+      reload();
     } catch (err) {
       setFormError(extractErrorMessage(err));
     } finally {
@@ -111,10 +103,11 @@ export default function StockPage() {
       <ErrorBanner error={error} />
 
       <div className="filters-bar">
-        <input placeholder="Search by material name or code..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input placeholder="Search by material name or code..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
       </div>
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage="No stock records found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No stock records found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
 
       {editing && (
         <Modal title={`Adjust Stock - ${materials[editing.material]?.material_name || ''}`} onClose={() => setEditing(null)}>

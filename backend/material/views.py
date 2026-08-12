@@ -6,10 +6,11 @@ from audit.mixins import AuditedMasterDataMixin
 
 
 class MaterialListCreateAPIView(AuditedMasterDataMixin, generics.ListCreateAPIView):
-    queryset = Material.objects.all()
+    queryset = Material.objects.all().order_by('material_name')
     serializer_class = MaterialSerializer
     permission_classes = [DenyDeleteUnlessAdmin]
     audit_repr_field = 'material_name'
+    search_fields = ['material_name', 'material_code', 'barcode']
 
 
 class MaterialRetrieveUpdateDestroyAPIView(AuditedMasterDataMixin, generics.RetrieveUpdateDestroyAPIView):

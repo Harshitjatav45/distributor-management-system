@@ -10,6 +10,7 @@ class CustomerListCreateAPIView(AuditedMasterDataMixin, generics.ListCreateAPIVi
     serializer_class = CustomerSerializer
     permission_classes = [DenyDeleteUnlessAdmin]
     audit_repr_field = 'customer_name'
+    search_fields = ['customer_name', 'customer_code']
 
 
 class CustomerRetrieveUpdateDestroyAPIView(AuditedMasterDataMixin, generics.RetrieveUpdateDestroyAPIView):

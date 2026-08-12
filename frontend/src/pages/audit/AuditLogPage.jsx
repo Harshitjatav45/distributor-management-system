@@ -1,34 +1,23 @@
-import { useEffect, useState } from 'react';
-import client from '../../api/client';
+import { useMemo, useState } from 'react';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner from '../../components/ErrorBanner';
+import Pagination from '../../components/Pagination';
 
 const ACTIONS = ['CREATE', 'UPDATE', 'DELETE', 'CONFIRM', 'CANCEL', 'ACTIVATE', 'DEACTIVATE', 'ROLE_CHANGE', 'PASSWORD_CHANGE', 'STATUS_CHANGE'];
 
 export default function AuditLogPage() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [modelName, setModelName] = useState('');
   const [action, setAction] = useState('');
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = {};
-      if (modelName) params.model_name = modelName;
-      if (action) params.action = action;
-      const resp = await client.get('/audit/', { params });
-      setRows(resp.data);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const filters = useMemo(() => {
+    const f = {};
+    if (modelName) f.model_name = modelName;
+    if (action) f.action = action;
+    return f;
+  }, [modelName, action]);
 
-  useEffect(() => { load(); }, [modelName, action]);
+  const { rows, count, loading, error, page, setPage, totalPages } = usePaginatedList('/audit/', { filters });
 
   const columns = [
     { key: 'timestamp', header: 'Timestamp', render: (r) => new Date(r.timestamp).toLocaleString() },
@@ -59,6 +48,7 @@ export default function AuditLogPage() {
       </div>
 
       <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No audit entries found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
     </div>
   );
 }

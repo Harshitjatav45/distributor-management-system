@@ -44,17 +44,20 @@ export default function PurchaseDetailPage() {
       setPurchase(purchaseResp.data);
       const [supplierResp, materialResp, itemsResp] = await Promise.all([
         client.get(`/supplier/${purchaseResp.data.supplier}/`),
-        client.get('/material/'),
-        // The purchase-items endpoint has no server-side filter-by-purchase
-        // support, and the Purchase detail response does not nest its
-        // items (PurchaseSerializer only serializes Purchase's own fields,
-        // not the reverse `items` relation) - so items must be fetched
-        // separately and filtered client-side by purchase id.
-        client.get('/purchase/purchase-items/'),
+        client.get('/material/', { params: { page_size: 200 } }),
+        // The Purchase detail response does not nest its items
+        // (PurchaseSerializer only serializes Purchase's own fields, not
+        // the reverse `items` relation), and the items endpoint is
+        // paginated, so items are fetched filtered server-side via
+        // ?purchase=<id> rather than fetching everything and filtering
+        // client-side (which would silently drop items past page 1 of the
+        // global list). page_size=200 covers any realistic single
+        // purchase's line-item count in one request.
+        client.get('/purchase/purchase-items/', { params: { purchase: id, page_size: 200 } }),
       ]);
       setSupplier(supplierResp.data);
-      setMaterials(materialResp.data);
-      setItems(itemsResp.data.filter((it) => it.purchase === purchaseResp.data.id));
+      setMaterials(materialResp.data.results);
+      setItems(itemsResp.data.results);
     } catch (err) {
       setError(err);
     } finally {

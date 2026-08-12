@@ -1,42 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner from '../../components/ErrorBanner';
 import StatusBadge from '../../components/StatusBadge';
+import Pagination from '../../components/Pagination';
 
 export default function SalesListPage() {
-  const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [salesResp, customerResp] = await Promise.all([client.get('/sales/'), client.get('/customer/')]);
-        setRows(salesResp.data);
-        const map = {};
-        for (const c of customerResp.data) map[c.id] = c.customer_name;
-        setCustomers(map);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    const timer = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const filteredRows = useMemo(() => {
-    return rows
-      .filter((r) => !statusFilter || r.status === statusFilter)
-      .filter((r) => !search.trim() || r.sales_number.toLowerCase().includes(search.trim().toLowerCase()))
-      .sort((a, b) => b.id - a.id);
-  }, [rows, statusFilter, search]);
+  const filters = useMemo(() => (statusFilter ? { status: statusFilter } : {}), [statusFilter]);
+  const { rows, count, loading, error, page, setPage, totalPages } = usePaginatedList('/sales/', { search, filters });
+
+  useEffect(() => {
+    client.get('/customer/', { params: { page_size: 200 } })
+      .then((resp) => {
+        const map = {};
+        for (const c of resp.data.results) map[c.id] = c.customer_name;
+        setCustomers(map);
+      })
+      .catch(() => setCustomers({}));
+  }, []);
 
   const columns = [
     { key: 'sales_number', header: 'Sales #', render: (r) => <Link to={`/sales/${r.id}`}>{r.sales_number}</Link> },
@@ -57,7 +50,7 @@ export default function SalesListPage() {
       <ErrorBanner error={error} />
 
       <div className="filters-bar">
-        <input placeholder="Search sales #..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input placeholder="Search sales #..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="DRAFT">Draft</option>
@@ -66,7 +59,8 @@ export default function SalesListPage() {
         </select>
       </div>
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage="No sales orders found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No sales orders found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
     </div>
   );
 }

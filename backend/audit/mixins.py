@@ -5,9 +5,8 @@ from audit.services import write_audit
 class AuditedMasterDataMixin:
     """Mixin for master-data ListCreateAPIView / RetrieveUpdateDestroyAPIView
     subclasses (Company, Category, Material, Supplier, Customer). Audits
-    CREATE and DELETE only - the two significant, comparatively rare
-    mutations for these long-lived records - not every routine field-level
-    UPDATE. Set `audit_repr_field` to the model's human-readable name field.
+    CREATE, UPDATE, and DELETE. Set `audit_repr_field` to the model's
+    human-readable name field.
     """
     audit_repr_field = None
 
@@ -25,6 +24,20 @@ class AuditedMasterDataMixin:
                 model_name=instance.__class__.__name__,
                 object_id=instance.pk,
                 object_repr=self._object_repr(instance),
+                after=serializer.data,
+            )
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            before = self.get_serializer(serializer.instance).data
+            instance = serializer.save()
+            write_audit(
+                actor=self.request.user,
+                action='UPDATE',
+                model_name=instance.__class__.__name__,
+                object_id=instance.pk,
+                object_repr=self._object_repr(instance),
+                before=before,
                 after=serializer.data,
             )
 

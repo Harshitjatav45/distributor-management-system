@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import client from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner, { extractErrorMessage } from '../../components/ErrorBanner';
 import Modal from '../../components/Modal';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import Pagination from '../../components/Pagination';
 
 function emptyFormState(fields) {
   const state = {};
@@ -14,14 +16,24 @@ function emptyFormState(fields) {
   return state;
 }
 
-export default function MasterDataPage({ title, apiPath, fields, listColumns, searchFields = [] }) {
+export default function MasterDataPage({ title, singular, apiPath, fields, listColumns, searchFields = [] }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
+  // Plain "strip trailing s" mangles words ending in "-ies" (Categories ->
+  // Categorie, Companies -> Companie) - callers for those pages pass an
+  // explicit singular form; everything else keeps working unchanged.
+  const singularTitle = singular || title.replace(/s$/, '');
 
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+
+  // Debounce the search box so we don't fire a request on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const { rows, count, loading, error: listError, page, setPage, totalPages, reload } = usePaginatedList(apiPath, { search });
 
   const [modalMode, setModalMode] = useState(null); // 'create' | 'edit'
   const [formState, setFormState] = useState(emptyFormState(fields));
@@ -33,24 +45,6 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
   const [deleting, setDeleting] = useState(false);
   const [optionSets, setOptionSets] = useState({});
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await client.get(apiPath);
-      setRows(resp.data);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiPath]);
-
   useEffect(() => {
     const fetchFields = fields.filter((f) => f.type === 'select' && f.optionsUrl);
     if (fetchFields.length === 0) return;
@@ -58,8 +52,8 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
       const next = {};
       for (const f of fetchFields) {
         try {
-          const resp = await client.get(f.optionsUrl);
-          next[f.name] = resp.data.map((item) => ({ value: item.id, label: f.optionLabel(item) }));
+          const resp = await client.get(f.optionsUrl, { params: { page_size: 200 } });
+          next[f.name] = resp.data.results.map((item) => ({ value: item.id, label: f.optionLabel(item) }));
         } catch {
           next[f.name] = [];
         }
@@ -68,12 +62,6 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const filteredRows = useMemo(() => {
-    if (!search.trim() || searchFields.length === 0) return rows;
-    const q = search.trim().toLowerCase();
-    return rows.filter((row) => searchFields.some((f) => String(row[f] ?? '').toLowerCase().includes(q)));
-  }, [rows, search, searchFields]);
 
   const openCreate = () => {
     setEditingRow(null);
@@ -125,7 +113,7 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
         await client.post(apiPath, payload);
       }
       closeModal();
-      await load();
+      reload();
     } catch (err) {
       setFormError(extractErrorMessage(err));
     } finally {
@@ -133,15 +121,17 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
     }
   };
 
+  const [deleteError, setDeleteError] = useState(null);
+
   const handleDelete = async () => {
     setDeleting(true);
+    setDeleteError(null);
     try {
       await client.delete(`${apiPath}${deleteTarget.id}/`);
       setDeleteTarget(null);
-      await load();
+      reload();
     } catch (err) {
-      setError(err);
-      setDeleteTarget(null);
+      setDeleteError(extractErrorMessage(err));
     } finally {
       setDeleting(false);
     }
@@ -176,21 +166,22 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
     <div className="page">
       <div className="page-header">
         <h1>{title}</h1>
-        <button className="btn btn-primary" onClick={openCreate}>+ Add {title.replace(/s$/, '')}</button>
+        <button className="btn btn-primary" onClick={openCreate}>+ Add {singularTitle}</button>
       </div>
 
-      <ErrorBanner error={error} />
+      <ErrorBanner error={listError} />
 
       {searchFields.length > 0 && (
         <div className="filters-bar">
-          <input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input placeholder="Search..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
       )}
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage={`No ${title.toLowerCase()} found.`} />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage={`No ${title.toLowerCase()} found.`} />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
 
       {modalMode && (
-        <Modal title={editingRow ? `Edit ${title.replace(/s$/, '')}` : `Add ${title.replace(/s$/, '')}`} onClose={closeModal} wide>
+        <Modal title={editingRow ? `Edit ${singularTitle}` : `Add ${singularTitle}`} onClose={closeModal} wide>
           <form onSubmit={handleSubmit}>
             <ErrorBanner message={formError} />
             <div className="form-grid">
@@ -250,13 +241,13 @@ export default function MasterDataPage({ title, apiPath, fields, listColumns, se
 
       {deleteTarget && (
         <ConfirmDialog
-          title={`Delete ${title.replace(/s$/, '')}`}
-          message={`Are you sure you want to delete "${deleteTarget[listColumns[0].key]}"? This cannot be undone.`}
+          title={`Delete ${singularTitle}`}
+          message={deleteError || `Are you sure you want to delete "${deleteTarget[listColumns[0].key]}"? This cannot be undone.`}
           confirmLabel="Delete"
           danger
           busy={deleting}
           onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={() => { setDeleteTarget(null); setDeleteError(null); }}
         />
       )}
     </div>

@@ -9,8 +9,19 @@ from audit.services import write_audit
 
 
 class PurchaseListCreateAPIView(generics.ListCreateAPIView):
-    queryset = Purchase.objects.all().order_by("-purchase_date", "-id")
     serializer_class = PurchaseSerializer
+    search_fields = ['purchase_number', 'supplier__supplier_name']
+
+    def get_queryset(self):
+        # ?status=DRAFT|CONFIRMED|CANCELLED - lets a caller get an exact
+        # status-scoped count (via page_size=1 + the count envelope field)
+        # without fetching every row, and lets the frontend's status
+        # dropdown filter server-side instead of only within one page.
+        queryset = Purchase.objects.all().order_by("-purchase_date", "-id")
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset
 
 
 class PurchaseRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -63,18 +74,58 @@ class PurchaseRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView
                     )
 
 
+def _purchase_item_repr(item):
+    return f"{item.purchase.purchase_number} - {item.material.material_name}"
+
+
 class PurchaseItemListCreateAPIView(generics.ListCreateAPIView):
-    queryset = PurchaseItem.objects.all().order_by("-id")
     serializer_class = PurchaseItemSerializer
+
+    def get_queryset(self):
+        # Supports ?purchase=<id> so a client can fetch just one Purchase's
+        # items directly - needed now that this list is paginated (fetching
+        # every PurchaseItem in the system and filtering client-side, as
+        # the frontend previously did, would silently drop a purchase's
+        # items once they fall past page 1).
+        queryset = PurchaseItem.objects.all().order_by("-id")
+        purchase_id = self.request.query_params.get('purchase')
+        if purchase_id:
+            queryset = queryset.filter(purchase_id=purchase_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            item = serializer.save()
+            write_audit(
+                actor=self.request.user, action='CREATE', model_name='PurchaseItem',
+                object_id=item.id, object_repr=_purchase_item_repr(item), after=serializer.data,
+            )
 
 
 class PurchaseItemRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = PurchaseItem.objects.all().order_by("-id")
     serializer_class = PurchaseItemSerializer
 
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            before = self.get_serializer(serializer.instance).data
+            item = serializer.save()
+            write_audit(
+                actor=self.request.user, action='UPDATE', model_name='PurchaseItem',
+                object_id=item.id, object_repr=_purchase_item_repr(item),
+                before=before, after=serializer.data,
+            )
+
     def perform_destroy(self, instance):
         if instance.purchase.status != 'DRAFT':
             raise ValidationError(
                 "Cannot delete items from a purchase that is not in DRAFT status."
             )
-        instance.delete()
+        with transaction.atomic():
+            object_repr = _purchase_item_repr(instance)
+            before = self.get_serializer(instance).data
+            instance.delete()
+            write_audit(
+                actor=self.request.user, action='DELETE', model_name='PurchaseItem',
+                object_id=before['id'], object_repr=object_repr, before=before,
+            )

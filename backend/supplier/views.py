@@ -10,6 +10,7 @@ class SupplierListCreateAPIView(AuditedMasterDataMixin, generics.ListCreateAPIVi
     serializer_class = SupplierSerializer
     permission_classes = [DenyDeleteUnlessAdmin]
     audit_repr_field = 'supplier_name'
+    search_fields = ['supplier_name', 'supplier_code']
 
 
 class SupplierRetrieveUpdateDestroyAPIView(AuditedMasterDataMixin, generics.RetrieveUpdateDestroyAPIView):

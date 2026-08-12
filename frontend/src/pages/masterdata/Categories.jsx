@@ -16,6 +16,7 @@ export default function Categories() {
   return (
     <MasterDataPage
       title="Categories"
+      singular="Category"
       apiPath="/category/"
       fields={fields}
       listColumns={listColumns}

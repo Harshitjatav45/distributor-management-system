@@ -1,39 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner from '../../components/ErrorBanner';
+import Pagination from '../../components/Pagination';
 
 export default function LedgerPage() {
-  const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState({});
   const [suppliers, setSuppliers] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [typeFilter, setTypeFilter] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [ledgerResp, custResp, supResp] = await Promise.all([
-          client.get('/ledger/'), client.get('/customer/'), client.get('/supplier/'),
-        ]);
-        setRows(ledgerResp.data);
-        setCustomers(Object.fromEntries(custResp.data.map((c) => [c.id, c.customer_name])));
-        setSuppliers(Object.fromEntries(supResp.data.map((s) => [s.id, s.supplier_name])));
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const filters = useMemo(() => (typeFilter ? { reference_type: typeFilter } : {}), [typeFilter]);
+  const { rows, count, loading, error, page, setPage, totalPages } = usePaginatedList('/ledger/', { filters });
 
-  const filteredRows = useMemo(
-    () => rows.filter((r) => !typeFilter || r.reference_type === typeFilter),
-    [rows, typeFilter]
-  );
+  useEffect(() => {
+    Promise.all([
+      client.get('/customer/', { params: { page_size: 200 } }),
+      client.get('/supplier/', { params: { page_size: 200 } }),
+    ]).then(([custResp, supResp]) => {
+      setCustomers(Object.fromEntries(custResp.data.results.map((c) => [c.id, c.customer_name])));
+      setSuppliers(Object.fromEntries(supResp.data.results.map((s) => [s.id, s.supplier_name])));
+    }).catch(() => { setCustomers({}); setSuppliers({}); });
+  }, []);
 
   const columns = [
     { key: 'transaction_date', header: 'Date' },
@@ -68,7 +56,8 @@ export default function LedgerPage() {
         </select>
       </div>
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage="No ledger entries found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No ledger entries found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
     </div>
   );
 }

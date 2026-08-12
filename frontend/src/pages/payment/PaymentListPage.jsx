@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner, { extractErrorMessage } from '../../components/ErrorBanner';
 import StatusBadge from '../../components/StatusBadge';
 import Modal from '../../components/Modal';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import Pagination from '../../components/Pagination';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -18,12 +20,12 @@ const emptyForm = {
 };
 
 export default function PaymentListPage() {
-  const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [typeFilter, setTypeFilter] = useState('');
+
+  const filters = useMemo(() => (typeFilter ? { payment_type: typeFilter } : {}), [typeFilter]);
+  const { rows, count, loading, error: listError, page, setPage, totalPages, reload } = usePaginatedList('/payment/', { filters });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -32,32 +34,20 @@ export default function PaymentListPage() {
 
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
 
   const customerMap = Object.fromEntries(customers.map((c) => [c.id, c.customer_name]));
   const supplierMap = Object.fromEntries(suppliers.map((s) => [s.id, s.supplier_name]));
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [payResp, custResp, supResp] = await Promise.all([
-        client.get('/payment/'), client.get('/customer/'), client.get('/supplier/'),
-      ]);
-      setRows(payResp.data);
-      setCustomers(custResp.data);
-      setSuppliers(supResp.data);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const filteredRows = useMemo(() => {
-    return rows.filter((r) => !typeFilter || r.payment_type === typeFilter).sort((a, b) => b.id - a.id);
-  }, [rows, typeFilter]);
+  useEffect(() => {
+    Promise.all([
+      client.get('/customer/', { params: { page_size: 200 } }),
+      client.get('/supplier/', { params: { page_size: 200 } }),
+    ]).then(([custResp, supResp]) => {
+      setCustomers(custResp.data.results);
+      setSuppliers(supResp.data.results);
+    }).catch(() => { setCustomers([]); setSuppliers([]); });
+  }, []);
 
   const openCreate = () => {
     setForm(emptyForm);
@@ -86,7 +76,7 @@ export default function PaymentListPage() {
       }
       await client.post('/payment/', payload);
       setModalOpen(false);
-      await load();
+      reload();
     } catch (err) {
       setFormError(extractErrorMessage(err));
     } finally {
@@ -96,13 +86,13 @@ export default function PaymentListPage() {
 
   const handleCancel = async () => {
     setCancelling(true);
+    setCancelError(null);
     try {
       await client.patch(`/payment/${cancelTarget.id}/`, { status: 'CANCELLED' });
       setCancelTarget(null);
-      await load();
+      reload();
     } catch (err) {
-      setError(err);
-      setCancelTarget(null);
+      setCancelError(extractErrorMessage(err));
     } finally {
       setCancelling(false);
     }
@@ -132,7 +122,7 @@ export default function PaymentListPage() {
         <button className="btn btn-primary" onClick={openCreate}>+ New Payment</button>
       </div>
 
-      <ErrorBanner error={error} />
+      <ErrorBanner error={listError} />
 
       <div className="filters-bar">
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
@@ -142,7 +132,8 @@ export default function PaymentListPage() {
         </select>
       </div>
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage="No payments found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No payments found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
 
       {modalOpen && (
         <Modal title="New Payment" onClose={() => setModalOpen(false)}>
@@ -211,12 +202,12 @@ export default function PaymentListPage() {
       {cancelTarget && (
         <ConfirmDialog
           title="Cancel Payment"
-          message={`Cancel payment "${cancelTarget.payment_number}"? This posts a reversing Ledger entry.`}
+          message={cancelError || `Cancel payment "${cancelTarget.payment_number}"? This posts a reversing Ledger entry.`}
           confirmLabel="Cancel Payment"
           danger
           busy={cancelling}
           onConfirm={handleCancel}
-          onCancel={() => setCancelTarget(null)}
+          onCancel={() => { setCancelTarget(null); setCancelError(null); }}
         />
       )}
     </div>

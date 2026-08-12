@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner, { extractErrorMessage } from '../../components/ErrorBanner';
 import StatusBadge from '../../components/StatusBadge';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -24,10 +26,8 @@ const emptyForm = {
 };
 
 export default function DispatchListPage() {
-  const [rows, setRows] = useState([]);
   const [salesList, setSalesList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { rows, count, loading, error: listError, page, setPage, totalPages, reload } = usePaginatedList('/dispatch/', {});
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -41,23 +41,11 @@ export default function DispatchListPage() {
 
   const salesMap = Object.fromEntries(salesList.map((s) => [s.id, s.sales_number]));
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [dispResp, salesResp] = await Promise.all([client.get('/dispatch/'), client.get('/sales/')]);
-      setRows(dispResp.data);
-      setSalesList(salesResp.data.filter((s) => s.status === 'CONFIRMED'));
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const sortedRows = useMemo(() => [...rows].sort((a, b) => b.id - a.id), [rows]);
+  useEffect(() => {
+    client.get('/sales/', { params: { status: 'CONFIRMED', page_size: 200 } })
+      .then((resp) => setSalesList(resp.data.results))
+      .catch(() => setSalesList([]));
+  }, []);
 
   const openCreate = () => {
     setForm(emptyForm);
@@ -76,7 +64,7 @@ export default function DispatchListPage() {
       }
       await client.post('/dispatch/', payload);
       setModalOpen(false);
-      await load();
+      reload();
     } catch (err) {
       setFormError(extractErrorMessage(err));
     } finally {
@@ -97,7 +85,7 @@ export default function DispatchListPage() {
     try {
       await client.patch(`/dispatch/${statusTarget.id}/`, { status: newStatus });
       setStatusTarget(null);
-      await load();
+      reload();
     } catch (err) {
       setStatusError(extractErrorMessage(err));
     } finally {
@@ -127,9 +115,10 @@ export default function DispatchListPage() {
         <button className="btn btn-primary" onClick={openCreate}>+ New Dispatch</button>
       </div>
 
-      <ErrorBanner error={error} />
+      <ErrorBanner error={listError} />
 
-      <DataTable columns={columns} rows={sortedRows} loading={loading} emptyMessage="No dispatches found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No dispatches found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
 
       {modalOpen && (
         <Modal title="New Dispatch" onClose={() => setModalOpen(false)} wide>

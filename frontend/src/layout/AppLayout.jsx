@@ -23,7 +23,7 @@ export default function AppLayout() {
           </button>
           <div />
           <div className="topbar-user">
-            <span>{user?.first_name || user?.username}</span>
+            <span className="topbar-username">{user?.first_name || user?.username}</span>
             <span className="topbar-role">{user?.role}</span>
             <button className="btn btn-secondary btn-sm" onClick={handleLogout}>Logout</button>
           </div>

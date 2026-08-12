@@ -23,7 +23,7 @@ export default function SalesCreatePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    client.get('/customer/').then((r) => setCustomers(r.data)).catch(() => setCustomers([]));
+    client.get('/customer/', { params: { page_size: 200 } }).then((r) => setCustomers(r.data.results)).catch(() => setCustomers([]));
   }, []);
 
   const handleChange = (name, value) => setForm((p) => ({ ...p, [name]: value }));

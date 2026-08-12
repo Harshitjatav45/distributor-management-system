@@ -18,9 +18,18 @@ logger = logging.getLogger(__name__)
 
 
 class PaymentListCreateAPIView(generics.ListCreateAPIView):
-    queryset = Payment.objects.all().order_by("-payment_date", "-id")
     serializer_class = PaymentSerializer
     permission_classes = [IsAdminOrManager]
+    search_fields = ['payment_number', 'customer__customer_name', 'supplier__supplier_name']
+
+    def get_queryset(self):
+        # ?payment_type=PAYMENT_IN|PAYMENT_OUT - see
+        # PurchaseListCreateAPIView.get_queryset() for the same pattern.
+        queryset = Payment.objects.all().order_by("-payment_date", "-id")
+        payment_type = self.request.query_params.get('payment_type')
+        if payment_type:
+            queryset = queryset.filter(payment_type=payment_type)
+        return queryset
 
     def perform_create(self, serializer):
         with transaction.atomic():

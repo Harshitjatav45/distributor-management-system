@@ -2,6 +2,20 @@ import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+if (!BASE_URL) {
+  // Fail loudly at load time rather than letting every request silently
+  // resolve against the frontend's own origin (baseURL: undefined) and
+  // surface as a generic, undiagnosable "Network Error" on first login.
+  // Vite only reads .env at dev-server start / build time - if this fires,
+  // create/update frontend/.env with VITE_API_BASE_URL and restart
+  // `npm run dev` (env var changes are not hot-reloaded).
+  throw new Error(
+    'VITE_API_BASE_URL is not set. Create frontend/.env with ' +
+    'VITE_API_BASE_URL=http://localhost:8000/api (see frontend/.env.example) ' +
+    'and restart the Vite dev server - env vars are only read at startup.'
+  );
+}
+
 const client = axios.create({
   baseURL: BASE_URL,
 });

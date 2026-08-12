@@ -12,9 +12,17 @@ from accounts.permissions import IsAdminOrManager
 
 
 class LedgerListAPIView(generics.ListAPIView):
-    queryset = Ledger.objects.all().order_by("-transaction_date", "-id")
     serializer_class = LedgerSerializer
     permission_classes = [IsAdminOrManager]
+    search_fields = ['customer__customer_name', 'supplier__supplier_name', 'remarks', 'reference_type']
+
+    def get_queryset(self):
+        # ?reference_type=PURCHASE|SALES|PAYMENT_IN|PAYMENT_OUT|OPENING
+        queryset = Ledger.objects.all().order_by("-transaction_date", "-id")
+        reference_type = self.request.query_params.get('reference_type')
+        if reference_type:
+            queryset = queryset.filter(reference_type=reference_type)
+        return queryset
 
 
 class LedgerRetrieveAPIView(generics.RetrieveAPIView):

@@ -347,6 +347,15 @@ table.data-table {
   align-items: center;
   gap: 10px;
   font-size: 13px;
+  min-width: 0;
+}
+
+.topbar-username {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
 }
 
 .topbar-role {
@@ -356,6 +365,7 @@ table.data-table {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .menu-toggle {
@@ -473,6 +483,33 @@ table.data-table {
   border-bottom-color: var(--color-primary);
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 4px;
+}
+
+.pagination-summary {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pagination-page-label {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     position: fixed;
@@ -488,5 +525,14 @@ table.data-table {
   }
   .page {
     padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: 0 12px;
+  }
+  .topbar-username {
+    max-width: 90px;
   }
 }

@@ -6,10 +6,11 @@ from audit.mixins import AuditedMasterDataMixin
 
 
 class CategoryListCreateAPIView(AuditedMasterDataMixin, generics.ListCreateAPIView):
-    queryset = Category.objects.all()
+    queryset = Category.objects.all().order_by('category_name')
     serializer_class = CategorySerializer
     permission_classes = [DenyDeleteUnlessAdmin]
     audit_repr_field = 'category_name'
+    search_fields = ['category_name', 'category_code']
 
 
 class CategoryRetrieveUpdateDestroyAPIView(AuditedMasterDataMixin, generics.RetrieveUpdateDestroyAPIView):

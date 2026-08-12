@@ -10,8 +10,16 @@ from audit.services import write_audit
 
 
 class DispatchListCreateAPIView(generics.ListCreateAPIView):
-    queryset = Dispatch.objects.all().order_by("-dispatch_date", "-id")
     serializer_class = DispatchSerializer
+    search_fields = ['dispatch_number', 'sales__sales_number']
+
+    def get_queryset(self):
+        # See PurchaseListCreateAPIView.get_queryset() for why this exists.
+        queryset = Dispatch.objects.all().order_by("-dispatch_date", "-id")
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset
 
     def perform_create(self, serializer):
         with transaction.atomic():

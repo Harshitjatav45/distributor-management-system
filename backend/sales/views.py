@@ -9,8 +9,16 @@ from audit.services import write_audit
 
 
 class SalesListCreateAPIView(generics.ListCreateAPIView):
-    queryset = Sales.objects.all().order_by("-sales_date", "-id")
     serializer_class = SalesSerializer
+    search_fields = ['sales_number', 'customer__customer_name']
+
+    def get_queryset(self):
+        # See PurchaseListCreateAPIView.get_queryset() for why this exists.
+        queryset = Sales.objects.all().order_by("-sales_date", "-id")
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset
 
 
 class SalesRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -58,18 +66,55 @@ class SalesRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
                     )
 
 
+def _sales_item_repr(item):
+    return f"{item.sales.sales_number} - {item.material.material_name}"
+
+
 class SalesItemListCreateAPIView(generics.ListCreateAPIView):
-    queryset = SalesItem.objects.all().order_by("-id")
     serializer_class = SalesItemSerializer
+
+    def get_queryset(self):
+        # Supports ?sales=<id> - see PurchaseItemListCreateAPIView for why
+        # this filter is needed now that the list is paginated.
+        queryset = SalesItem.objects.all().order_by("-id")
+        sales_id = self.request.query_params.get('sales')
+        if sales_id:
+            queryset = queryset.filter(sales_id=sales_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            item = serializer.save()
+            write_audit(
+                actor=self.request.user, action='CREATE', model_name='SalesItem',
+                object_id=item.id, object_repr=_sales_item_repr(item), after=serializer.data,
+            )
 
 
 class SalesItemRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = SalesItem.objects.all().order_by("-id")
     serializer_class = SalesItemSerializer
 
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            before = self.get_serializer(serializer.instance).data
+            item = serializer.save()
+            write_audit(
+                actor=self.request.user, action='UPDATE', model_name='SalesItem',
+                object_id=item.id, object_repr=_sales_item_repr(item),
+                before=before, after=serializer.data,
+            )
+
     def perform_destroy(self, instance):
         if instance.sales.status != 'DRAFT':
             raise ValidationError(
                 "Cannot delete items from a sales order that is not in DRAFT status."
             )
-        instance.delete()
+        with transaction.atomic():
+            object_repr = _sales_item_repr(instance)
+            before = self.get_serializer(instance).data
+            instance.delete()
+            write_audit(
+                actor=self.request.user, action='DELETE', model_name='SalesItem',
+                object_id=before['id'], object_repr=object_repr, before=before,
+            )

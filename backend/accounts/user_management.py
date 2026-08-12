@@ -126,6 +126,7 @@ class UserListCreateAPIView(generics.ListCreateAPIView):
     """
     permission_classes = [IsAdminOnly]
     queryset = User.objects.filter(is_superuser=False).order_by('username')
+    search_fields = ['username', 'first_name', 'last_name', 'email']
 
     def get_serializer_class(self):
         return UserCreateSerializer if self.request.method == 'POST' else UserManagementSerializer

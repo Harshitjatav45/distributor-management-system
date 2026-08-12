@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -227,6 +228,18 @@ REST_FRAMEWORK = {
         'refresh': '15/minute',
     },
     'EXCEPTION_HANDLER': 'accounts.exception_handlers.logging_exception_handler',
+    # Applies to every generics.ListAPIView/ListCreateAPIView in the project
+    # (all master data, Stock, Purchase/Sales/+Items, Payment, Dispatch,
+    # Ledger, Users, AuditLog) - list responses become
+    # {count, next, previous, results} instead of a bare array. Reports
+    # stay bare arrays: they're plain APIView endpoints (not GenericAPIView),
+    # so this setting doesn't reach them - see reports/views.py for why
+    # they're deliberately left unpaginated.
+    'DEFAULT_PAGINATION_CLASS': 'config.pagination.DefaultPagination',
+    # SearchFilter is inert on any view that doesn't declare search_fields
+    # (returns the queryset unchanged), so enabling it globally is safe -
+    # only the views that opt in with `search_fields = [...]` are affected.
+    'DEFAULT_FILTER_BACKENDS': ['rest_framework.filters.SearchFilter'],
 }
 
 # djangorestframework-simplejwt
@@ -315,3 +328,11 @@ LOGGING = {
         },
     },
 }
+
+# Test-only speedup: PBKDF2 (the real, secure default) is deliberately slow;
+# the committed test suite creates many users per run purely to exercise
+# permission/auth logic, not to test hashing strength. Only takes effect
+# under `manage.py test` (detected via sys.argv) - never in dev or
+# production, where the strong default hasher is always used.
+if 'test' in sys.argv:
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']

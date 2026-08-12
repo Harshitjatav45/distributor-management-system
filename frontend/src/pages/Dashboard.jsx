@@ -4,6 +4,13 @@ import { useAuth } from '../auth/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorBanner from '../components/ErrorBanner';
 
+// Cheap way to read just the total count from a paginated endpoint without
+// fetching every row - DRF's pagination envelope carries `count` regardless
+// of page_size, so a page_size=1 request is enough to get an exact total.
+function countOnly(path, params = {}) {
+  return client.get(path, { params: { ...params, page_size: 1 } }).then((r) => r.data.count);
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
@@ -17,36 +24,48 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        const [companies, customers, suppliers, materials, stock, purchases, sales, dispatches] = await Promise.all([
-          client.get('/company/'),
-          client.get('/customer/'),
-          client.get('/supplier/'),
-          client.get('/material/'),
-          client.get('/stock/'),
-          client.get('/purchase/'),
-          client.get('/sales/'),
-          client.get('/dispatch/'),
+        const isAdminOrManager = user?.role === 'Admin' || user?.role === 'Manager';
+
+        const [
+          companiesCount, customersCount, suppliersCount,
+          materialResp, stockResp,
+          purchaseTotal, purchaseDraft, purchaseConfirmed,
+          salesTotal, salesDraft, salesConfirmed,
+          dispatchTotal, dispatchDispatched, dispatchOutForDelivery,
+        ] = await Promise.all([
+          countOnly('/company/'),
+          countOnly('/customer/'),
+          countOnly('/supplier/'),
+          // Full result set needed (not just a count) to join minimum_stock_level
+          // against Stock rows below - materials/stock are bounded master-data
+          // sets, unlike the transactional counts above which use count-only
+          // requests specifically because they grow without bound over time.
+          client.get('/material/', { params: { page_size: 200 } }),
+          client.get('/stock/', { params: { page_size: 200 } }),
+          countOnly('/purchase/'),
+          countOnly('/purchase/', { status: 'DRAFT' }),
+          countOnly('/purchase/', { status: 'CONFIRMED' }),
+          countOnly('/sales/'),
+          countOnly('/sales/', { status: 'DRAFT' }),
+          countOnly('/sales/', { status: 'CONFIRMED' }),
+          countOnly('/dispatch/'),
+          countOnly('/dispatch/', { status: 'DISPATCHED' }),
+          countOnly('/dispatch/', { status: 'OUT_FOR_DELIVERY' }),
         ]);
 
-        const isAdminOrManager = user?.role === 'Admin' || user?.role === 'Manager';
-        let payments = null;
+        let paymentsTotal = null;
         if (isAdminOrManager) {
           try {
-            const paymentResp = await client.get('/payment/');
-            payments = paymentResp.data;
+            paymentsTotal = await countOnly('/payment/');
           } catch {
-            payments = null;
+            paymentsTotal = null;
           }
         }
 
         if (cancelled) return;
 
-        const purchaseData = purchases.data;
-        const salesData = sales.data;
-        const dispatchData = dispatches.data;
-        const stockData = stock.data;
-        const materialData = materials.data;
-
+        const materialData = materialResp.data.results;
+        const stockData = stockResp.data.results;
         const minStockByMaterial = new Map(materialData.map((m) => [m.id, Number(m.minimum_stock_level ?? 0)]));
         const lowStockCount = stockData.filter((s) => {
           const min = minStockByMaterial.get(s.material) ?? 0;
@@ -54,21 +73,17 @@ export default function Dashboard() {
         }).length;
 
         setStats({
-          companies: companies.data.length,
-          customers: customers.data.length,
-          suppliers: suppliers.data.length,
-          materials: materialData.length,
-          stockRecords: stockData.length,
+          companies: companiesCount,
+          customers: customersCount,
+          suppliers: suppliersCount,
+          materials: materialResp.data.count,
+          stockRecords: stockResp.data.count,
           lowStockCount,
-          purchaseTotal: purchaseData.length,
-          purchaseDraft: purchaseData.filter((p) => p.status === 'DRAFT').length,
-          purchaseConfirmed: purchaseData.filter((p) => p.status === 'CONFIRMED').length,
-          salesTotal: salesData.length,
-          salesDraft: salesData.filter((s) => s.status === 'DRAFT').length,
-          salesConfirmed: salesData.filter((s) => s.status === 'CONFIRMED').length,
-          dispatchTotal: dispatchData.length,
-          dispatchActive: dispatchData.filter((d) => !['DELIVERED', 'CANCELLED', 'FAILED'].includes(d.status)).length,
-          paymentsTotal: payments ? payments.length : null,
+          purchaseTotal, purchaseDraft, purchaseConfirmed,
+          salesTotal, salesDraft, salesConfirmed,
+          dispatchTotal,
+          dispatchActive: dispatchDispatched + dispatchOutForDelivery,
+          paymentsTotal,
         });
       } catch (err) {
         if (!cancelled) setError(err);

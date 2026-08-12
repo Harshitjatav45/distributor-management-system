@@ -1,42 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner from '../../components/ErrorBanner';
 import StatusBadge from '../../components/StatusBadge';
+import Pagination from '../../components/Pagination';
 
 export default function PurchaseListPage() {
-  const [rows, setRows] = useState([]);
   const [suppliers, setSuppliers] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [purchaseResp, supplierResp] = await Promise.all([client.get('/purchase/'), client.get('/supplier/')]);
-        setRows(purchaseResp.data);
-        const map = {};
-        for (const s of supplierResp.data) map[s.id] = s.supplier_name;
-        setSuppliers(map);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    const timer = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const filteredRows = useMemo(() => {
-    return rows
-      .filter((r) => !statusFilter || r.status === statusFilter)
-      .filter((r) => !search.trim() || r.purchase_number.toLowerCase().includes(search.trim().toLowerCase()))
-      .sort((a, b) => b.id - a.id);
-  }, [rows, statusFilter, search]);
+  const filters = useMemo(() => (statusFilter ? { status: statusFilter } : {}), [statusFilter]);
+  const { rows, count, loading, error, page, setPage, totalPages } = usePaginatedList('/purchase/', { search, filters });
+
+  useEffect(() => {
+    client.get('/supplier/', { params: { page_size: 200 } })
+      .then((resp) => {
+        const map = {};
+        for (const s of resp.data.results) map[s.id] = s.supplier_name;
+        setSuppliers(map);
+      })
+      .catch(() => setSuppliers({}));
+  }, []);
 
   const columns = [
     { key: 'purchase_number', header: 'Purchase #', render: (r) => <Link to={`/purchases/${r.id}`}>{r.purchase_number}</Link> },
@@ -57,7 +50,7 @@ export default function PurchaseListPage() {
       <ErrorBanner error={error} />
 
       <div className="filters-bar">
-        <input placeholder="Search purchase #..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input placeholder="Search purchase #..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="DRAFT">Draft</option>
@@ -66,7 +59,8 @@ export default function PurchaseListPage() {
         </select>
       </div>
 
-      <DataTable columns={columns} rows={filteredRows} loading={loading} emptyMessage="No purchases found." />
+      <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No purchases found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
     </div>
   );
 }

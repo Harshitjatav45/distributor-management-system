@@ -44,15 +44,15 @@ export default function SalesDetailPage() {
       setSales(salesResp.data);
       const [customerResp, materialResp, itemsResp] = await Promise.all([
         client.get(`/customer/${salesResp.data.customer}/`),
-        client.get('/material/'),
+        client.get('/material/', { params: { page_size: 200 } }),
         // SalesSerializer doesn't nest the reverse `items` relation, and
-        // the sales-items endpoint has no server-side filter-by-sales
-        // support, so fetch all items and filter client-side.
-        client.get('/sales/sales-items/'),
+        // the items list is paginated, so filter server-side via
+        // ?sales=<id> - see PurchaseDetailPage.jsx for the same pattern.
+        client.get('/sales/sales-items/', { params: { sales: id, page_size: 200 } }),
       ]);
       setCustomer(customerResp.data);
-      setMaterials(materialResp.data);
-      setItems(itemsResp.data.filter((it) => it.sales === salesResp.data.id));
+      setMaterials(materialResp.data.results);
+      setItems(itemsResp.data.results);
     } catch (err) {
       setError(err);
     } finally {

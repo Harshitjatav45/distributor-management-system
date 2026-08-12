@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import client from '../../api/client';
+import usePaginatedList from '../../hooks/usePaginatedList';
 import DataTable from '../../components/DataTable';
 import ErrorBanner, { extractErrorMessage } from '../../components/ErrorBanner';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
 
 const emptyCreateForm = { username: '', password: '', first_name: '', last_name: '', email: '', group: 'Staff' };
 
 export default function UsersPage() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { rows, count, loading, error, page, setPage, totalPages, reload } = usePaginatedList('/users/', {});
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
@@ -25,21 +25,6 @@ export default function UsersPage() {
   const [passwordError, setPasswordError] = useState(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await client.get('/users/');
-      setRows(resp.data);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
-
   const openCreate = () => {
     setCreateForm(emptyCreateForm);
     setCreateError(null);
@@ -53,7 +38,7 @@ export default function UsersPage() {
     try {
       await client.post('/users/', createForm);
       setCreateOpen(false);
-      await load();
+      reload();
     } catch (err) {
       setCreateError(extractErrorMessage(err));
     } finally {
@@ -61,12 +46,15 @@ export default function UsersPage() {
     }
   };
 
+  const [toggleError, setToggleError] = useState(null);
+
   const toggleActive = async (user) => {
+    setToggleError(null);
     try {
       await client.patch(`/users/${user.id}/`, { is_active: !user.is_active });
-      await load();
+      reload();
     } catch (err) {
-      setError(err);
+      setToggleError(extractErrorMessage(err));
     }
   };
 
@@ -82,7 +70,7 @@ export default function UsersPage() {
     try {
       await client.patch(`/users/${roleTarget.id}/`, { group: roleValue });
       setRoleTarget(null);
-      await load();
+      reload();
     } catch (err) {
       setRoleError(extractErrorMessage(err));
     }
@@ -138,8 +126,10 @@ export default function UsersPage() {
       </p>
 
       <ErrorBanner error={error} />
+      <ErrorBanner message={toggleError} />
 
       <DataTable columns={columns} rows={rows} loading={loading} emptyMessage="No users found." />
+      <Pagination page={page} totalPages={totalPages} count={count} onPageChange={setPage} />
 
       {createOpen && (
         <Modal title="New User" onClose={() => setCreateOpen(false)}>

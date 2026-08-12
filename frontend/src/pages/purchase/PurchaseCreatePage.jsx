@@ -27,7 +27,7 @@ export default function PurchaseCreatePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    client.get('/supplier/').then((r) => setSuppliers(r.data)).catch(() => setSuppliers([]));
+    client.get('/supplier/', { params: { page_size: 200 } }).then((r) => setSuppliers(r.data.results)).catch(() => setSuppliers([]));
   }, []);
 
   const handleChange = (name, value) => setForm((p) => ({ ...p, [name]: value }));

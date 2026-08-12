@@ -26,6 +26,7 @@ export default function Companies() {
   return (
     <MasterDataPage
       title="Companies"
+      singular="Company"
       apiPath="/company/"
       fields={fields}
       listColumns={listColumns}
